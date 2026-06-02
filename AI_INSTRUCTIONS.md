@@ -17,14 +17,11 @@ The pipeline consists of 4 decoupled workflows:
 
 If you are an AI tasked with setting up this pipeline in a new repository, follow these steps:
 
-### Step 1: Analyze the Codebase
-Before editing files, run commands to understand:
-* **Build Tool:** Is it Maven (`pom.xml`, `./mvnw`) or Gradle (`build.gradle`, `./gradlew`)?
-* **Java Version:** Check the Java compiler configuration in the build file (e.g., `<java.version>21</java.version>`).
-* **Main Application Properties:** Look at `application.properties`/`application.yml` to find:
-  * Application server port (usually `8080`).
-  * Database requirements (e.g., PostgreSQL, MySQL, H2).
-  * Spring Profiles (e.g., active profiles for `test` or `local`).
+### Step 1: Analyze the Codebase & Technology Stack
+Before editing files, run commands or inspect the codebase to understand:
+* **Language & Framework:** Is it Node.js (JavaScript/TypeScript), Python, Go, Java (Spring Boot), PHP, Rust, etc.?
+* **Port:** Identify the port the application listens on (e.g. `3000` for Node.js, `8000` for Python, `8080` for Java).
+* **Database & Configs:** Look for database drivers, connection strings, or configuration files (like `.env`, `application.properties`, or `config.json`) to find database requirements and environment variables.
 
 ### Step 2: Copy and Rename Workflow Files
 Copy the templates from this directory into the new project's `.github/workflows/` directory and rename them:
@@ -37,10 +34,14 @@ Copy the templates from this directory into the new project's `.github/workflows
 Inside the copied `.yml` files, search and update the following settings under the `env:` block or top-level configurations:
 
 1. **`WORKING_DIR`**: Set this to `.` if the project is in the root directory. If it is in a subdirectory (e.g., a monorepo with `./backend`), change it to `./backend`.
-2. **`JAVA_VERSION` & `JAVA_DISTRIBUTION`**: Match the version found in the new project.
-3. **`APP_PORT` & `CONTAINER_PORT`**: Update these to match the port the application listens on (default is `8080`).
+2. **Build-Specific Setup (Swap build tools as needed)**:
+   * **Java/Maven (Default in template):** Uses `actions/setup-java@v4` and `./mvnw test` / `./mvnw package`.
+   * **Node.js:** Replace Java setup with `actions/setup-node@v4`, run `npm ci` (or `npm install`), and change the test command to `npm test`. In the docker build step, make sure to skip compile/package since JS/TS is packaged in the Dockerfile build process itself.
+   * **Python:** Replace with `actions/setup-python@v4`, run `pip install -r requirements.txt`, and change the test command to `pytest` or `unittest`.
+   * **Other Stacks (Go, Rust, etc.):** Swap the setup action (e.g. `actions/setup-go@v4`) and test/compile CLI commands.
+3. **`APP_PORT` & `CONTAINER_PORT`**: Update these to match the port the application listens on (e.g., `8080`, `3000`, `8000`).
 4. **`CONTAINER_NAME`**: Choose a unique container name for this application (e.g., `my-new-app-test`).
-5. **Database Configuration**: If the new application does not use PostgreSQL (e.g., MySQL or H2), modify the `services:` block in the CI/Build files and the database driver variables in the deploy script.
+5. **Database & Environment Configuration**: If the new application does not use PostgreSQL (e.g., uses MySQL, MongoDB, Redis, or no database), modify or remove the `services:` block in the CI/Build files. In the deploy scripts, update the `-e` environment variables passed to the `docker run` command to match the connection strings of the new application.
 
 ### Step 4: Configure GitHub Repository Settings
 Guide the human developer to configure the following settings on GitHub.com:
