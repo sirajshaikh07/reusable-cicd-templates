@@ -1,0 +1,49 @@
+# ============================================================================
+# TEMPLATE: .dockerignore
+# ============================================================================
+# Description: Prevents local development files, build artifacts, and secrets 
+#              from being copied into the Docker build context.
+# ============================================================================
+
+# Git
+.git
+.gitignore
+.github
+
+# Build Artifacts
+target/
+build/
+dist/
+out/
+*.jar
+*.war
+*.ear
+
+# Dependency Folders
+node_modules/
+.gradle/
+.mvn/
+vendor/
+
+# IDE / Editor configs
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+
+# Secrets & Environment variables
+.env
+.env.*
+*.pem
+*.key
+secrets/
+credentials*
+
+# Logs & OS Files
+*.log
+.DS_Store
+Thumbs.db
