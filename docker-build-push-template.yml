@@ -1,0 +1,100 @@
+# ============================================================================
+# TEMPLATE: Build & Push Docker Image
+# ============================================================================
+# Description: Packages application as a Docker image and pushes to Docker Hub.
+# Setup: Add DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, and DOCKERHUB_REPO to secrets.
+# ============================================================================
+
+name: "Build & Push Docker Image [TEMPLATE]"
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - "src/**"
+      - "Dockerfile"
+      - ".github/workflows/build-and-push.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  JAVA_DISTRIBUTION: "temurin"
+  WORKING_DIR: "." # Adjust if your app is in a subdirectory
+
+jobs:
+  ci-gate:
+    name: "🧪 CI Gate — Run Tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - name: "⬇️ Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "☕ Set up JDK"
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: "🧪 Run tests"
+        run: ./mvnw test --no-transfer-progress
+
+  docker-build-push:
+    name: "🐳 Build & Push Docker Image"
+    runs-on: ubuntu-latest
+    needs: ci-gate
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - name: "⬇️ Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "☕ Set up JDK"
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: "📦 Package JAR"
+        run: ./mvnw package -DskipTests --no-transfer-progress
+
+      - name: "🔧 Set up Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "🔑 Login to Docker Registry"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: "🏷️ Generate Docker metadata"
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_REPO }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: "🐳 Build and push Docker image"
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ env.WORKING_DIR }}
+          file: ${{ env.WORKING_DIR }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

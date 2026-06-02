@@ -1,0 +1,81 @@
+# ============================================================================
+# TEMPLATE: CI — Build & Test (Java / Maven)
+# ============================================================================
+# Description: Compiles code and runs unit/integration tests on Pull Requests.
+# Setup: Add database secrets to repository secrets.
+# ============================================================================
+
+name: "CI — Build & Test [TEMPLATE]"
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - "src/**"
+      - "pom.xml"
+      - ".github/workflows/ci-test.yml"
+
+concurrency:
+  group: ci-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  JAVA_DISTRIBUTION: "temurin"
+  WORKING_DIR: "." # Adjust if your app is in a subdirectory (e.g., ./backend)
+
+jobs:
+  compile:
+    name: "📦 Compile & Validate"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - name: "⬇️ Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "☕ Set up JDK ${{ env.JAVA_VERSION }}"
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: "🔨 Compile"
+        run: ./mvnw clean compile --no-transfer-progress
+
+  test:
+    name: "🧪 Unit & Integration Tests"
+    runs-on: ubuntu-latest
+    needs: compile
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    # Optional: Spin up database service container if needed for integration tests
+    # services:
+    #   postgres:
+    #     image: postgres:16-alpine
+    #     env:
+    #       POSTGRES_DB: ${{ secrets.TEST_DB_NAME }}
+    #       POSTGRES_USER: ${{ secrets.TEST_DB_USER }}
+    #       POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+    #     ports:
+    #       - 5432:5432
+
+    steps:
+      - name: "⬇️ Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "☕ Set up JDK"
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: "🧪 Run tests"
+        run: ./mvnw test --no-transfer-progress

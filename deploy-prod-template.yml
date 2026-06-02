@@ -1,0 +1,119 @@
+# ============================================================================
+# TEMPLATE: Deploy to PRODUCTION Environment (Manual Gates)
+# ============================================================================
+# Description: SSH deploys with manual approval, safe rollbacks, and notifications.
+# Setup: Add SERVER_HOST, SERVER_USER, and SERVER_SSH_KEY to production secrets.
+# ============================================================================
+
+name: "Deploy → PRODUCTION 🔒 [TEMPLATE]"
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy (e.g., latest, sha-abc1234)"
+        required: true
+        default: "latest"
+      confirm_deploy:
+        description: "Type 'DEPLOY-PROD' to confirm production deployment"
+        required: true
+
+env:
+  DEPLOY_ENV: production
+  APP_PORT: 8080
+  CONTAINER_PORT: 8080
+  CONTAINER_NAME: "myapp-backend-prod"
+
+jobs:
+  validate:
+    name: "🔐 Validate Deployment Request"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "🔐 Verify deployment confirmation"
+        run: |
+          if [ "${{ github.event.inputs.confirm_deploy }}" != "DEPLOY-PROD" ]; then
+            echo "❌ ERROR: You must type 'DEPLOY-PROD' to confirm."
+            exit 1
+          fi
+          echo "✅ Production deployment confirmed by ${{ github.actor }}"
+
+  deploy-prod:
+    name: "🚀 Deploy to PRODUCTION"
+    runs-on: ubuntu-latest
+    needs: validate
+    environment:
+      name: production # Targets 'production' GitHub Environment (with Required Reviewers rule)
+
+    steps:
+      - name: "⬇️ Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "🔑 Deploy to production server via SSH"
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+
+            IMAGE="${{ secrets.DOCKERHUB_REPO }}:${{ github.event.inputs.image_tag }}"
+
+            echo "📥 Pulling image: $IMAGE"
+            docker pull $IMAGE
+
+            # Rename current container for rollback reference
+            docker rename ${{ env.CONTAINER_NAME }} ${{ env.CONTAINER_NAME }}-rollback 2>/dev/null || true
+
+            echo "🚀 Starting new container..."
+            docker run -d \
+              --name ${{ env.CONTAINER_NAME }} \
+              --restart unless-stopped \
+              -p ${{ env.APP_PORT }}:${{ env.CONTAINER_PORT }} \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              -e SPRING_DATASOURCE_URL=jdbc:postgresql://${{ secrets.DB_HOST }}:${{ secrets.DB_PORT }}/${{ secrets.DB_NAME }} \
+              -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
+              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              $IMAGE
+
+            # Wait and verify
+            sleep 15
+            if docker ps | grep -q ${{ env.CONTAINER_NAME }}; then
+              echo "✅ Container is running!"
+              # Remove the rollback container since new deployment succeeded
+              docker stop ${{ env.CONTAINER_NAME }}-rollback 2>/dev/null || true
+              docker rm ${{ env.CONTAINER_NAME }}-rollback 2>/dev/null || true
+            else
+              echo "❌ Container failed! Rolling back to previous version..."
+              docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+              docker rename ${{ env.CONTAINER_NAME }}-rollback ${{ env.CONTAINER_NAME }}
+              docker start ${{ env.CONTAINER_NAME }}
+              exit 1
+            fi
+
+            docker image prune -f
+
+  smoke-test-prod:
+    name: "🔥 Production Smoke Tests"
+    runs-on: ubuntu-latest
+    needs: deploy-prod
+    steps:
+      - name: "⏳ Wait for startup"
+        run: sleep 30
+
+      - name: "🏥 Health check"
+        run: |
+          for i in {1..15}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --connect-timeout 5 \
+              --max-time 10 \
+              http://${{ secrets.SERVER_HOST }}:${{ env.APP_PORT }}/actuator/health || echo "000")
+            if [ "$STATUS" == "200" ]; then
+              echo "✅ Production health check PASSED!"
+              exit 0
+            fi
+            echo "⏳ Attempt $i/15 — Status: $STATUS"
+            sleep 10
+          done
+          echo "❌ PRODUCTION HEALTH CHECK FAILED!"
+          exit 1
